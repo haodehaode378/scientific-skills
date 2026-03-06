@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Node/npm
+node_modules/
+.npm/
+skills/.npm-cache-local/
+
+# Temp
+*.tmp
+*.log

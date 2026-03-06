@@ -234,30 +234,57 @@ def should_exclude(record: dict, rules: list[dict]) -> bool:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build CCF dataset JSON from a CCF PDF")
-    parser.add_argument("pdf", type=Path, help="Path to CCF 2026 PDF")
-    parser.add_argument("--out", type=Path, required=True, help="Output JSON path")
+    parser = argparse.ArgumentParser(description="Build CCF dataset JSON from a CCF catalog PDF")
+    parser.add_argument("pdf", type=Path, help="Path to CCF catalog PDF")
+    parser.add_argument(
+        "--year",
+        default="2026",
+        help="CCF catalog year, used for default output/exclusion paths",
+    )
+    parser.add_argument("--out", type=Path, help="Output JSON path")
     parser.add_argument(
         "--exclude",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "references" / "excluded_venues.json",
         help="Optional JSON list of entries to exclude (abbreviation/url)",
     )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "references" / "manifest.json",
+        help="Path to references manifest JSON",
+    )
     args = parser.parse_args()
+    year = str(args.year).strip()
+    references_root = Path(__file__).resolve().parents[1] / "references"
+    out_path = args.out or (references_root / year / "rankings.json")
+    exclude_path = args.exclude or (references_root / year / "excluded_venues.json")
 
     records = build_records(args.pdf)
-    exclude_rules = load_exclusions(args.exclude)
+    exclude_rules = load_exclusions(exclude_path)
     if exclude_rules:
         records = [r for r in records if not should_exclude(r, exclude_rules)]
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    write_json(args.out, records)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(out_path, records)
+
+    manifest = {"default_year": year, "years": [year]}
+    if args.manifest.exists():
+        try:
+            manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            manifest = {"default_year": year, "years": [year]}
+    years = sorted({str(y) for y in manifest.get("years", []) if str(y).strip()} | {year})
+    manifest["years"] = years
+    numeric_years = sorted([y for y in years if re.fullmatch(r"\d{4}", y)], key=int)
+    manifest["default_year"] = numeric_years[-1] if numeric_years else year
+    args.manifest.parent.mkdir(parents=True, exist_ok=True)
+    args.manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     stats: dict[str, int] = {"journal": 0, "conference": 0}
     for r in records:
         if r["type"] in stats:
             stats[r["type"]] += 1
 
-    print(f"wrote {len(records)} records to {args.out}")
+    print(f"wrote {len(records)} records to {out_path}")
     print(f"journal={stats['journal']} conference={stats['conference']}")
 
 
