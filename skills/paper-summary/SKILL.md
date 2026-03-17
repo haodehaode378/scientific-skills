@@ -1,111 +1,187 @@
 ---
 name: paper-summary
-description: Summarize academic papers from arXiv links or PDF files and extract key research information such as research problem, methodology, contributions, results, and limitations.
+description: Research-grade single-paper analysis with evidence-grounded structured extraction and internal self-evaluation. Use when users ask to summarize or screen one academic paper from an arXiv link/ID or local PDF and need verifiable claims with citations, especially for Chinese-language output to students.
 ---
 
 # paper-summary
 
-paper-summary is a research assistant skill designed to help researchers quickly understand academic papers.
+This skill is a research-grade academic paper analysis workflow. It does not only summarize papers. It extracts verifiable, structured scientific knowledge and evaluates quality before finalizing output.
 
-Instead of reading the entire paper, this skill extracts the most important information and presents it in a structured summary format. It is particularly useful during literature review and early-stage research when researchers need to evaluate many papers efficiently.
+## Core Features
 
-## Motivation
-
-Researchers often need to read a large number of academic papers in order to stay up to date with the latest developments in their field.
-
-However, reading every paper in detail is time-consuming. In most cases, researchers only need to quickly determine:
-
-- what problem the paper is addressing
-- what method or approach it proposes
-- what contributions it makes
-- whether the results are significant
-- whether the work is relevant to their research
-
-This skill accelerates the literature review process by automatically extracting and organizing the most important information from academic papers.
+- Structured academic information extraction
+- Evidence-grounded outputs with traceable locations
+- Hallucination minimization through strict source constraints
+- LLM-as-Judge quality scoring
+- Self-refinement loop for quality improvement
 
 ## Supported Inputs
 
-This skill supports the following input formats:
+Exactly one paper per run:
 
-- arXiv paper links  
-- arXiv IDs  
-- local PDF files  
+- arXiv links
+- arXiv IDs
+- Local PDF files
 
-Examples:
+If the user provides multiple papers, ask the user to choose one and do not run batch analysis.
 
-```
-summary paper https://arxiv.org/pdf/2304.13712
-```
+## Workflow (Strict Execution)
 
-```
-summary paper arxiv:2304.13712
-```
+### Step 1: Document Parsing
 
-```
-summary paper ./paper.pdf
-```
+Identify and map core sections:
 
-## Query Workflow
+- Abstract
+- Introduction
+- Method
+- Experiments
+- Conclusion
 
-1. Detect the input source (arXiv link, arXiv ID, or local PDF file).
-2. Retrieve the paper content.
-3. Identify important sections of the paper.
-4. Extract key research information.
-5. Generate a structured summary.
+### Step 2: Structured Extraction
 
-## Output Structure
+Extract the following elements strictly from the paper:
 
-The generated summary should contain the following sections:
+#### Research Problem
 
-### Title
+- State the exact problem being solved.
+- Avoid generic or field-level statements.
 
-The title of the academic paper.
+#### Methodology
 
-### Research Problem
+- Core idea
+- Model or framework
+- Key techniques
 
-A short explanation of the research question or problem the paper aims to solve.
+#### Key Contributions
 
-### Methodology
+- Include explicit contributions only.
+- Prefer author-provided numbered contributions when available.
 
-A description of the method, model, or approach used in the research.
+#### Experimental Results
 
-### Key Contributions
+- Dataset names
+- Metrics (for example: Accuracy, BLEU, F1)
+- Quantitative improvements
 
-The main innovations or contributions proposed by the authors.
+#### Limitations
 
-### Experimental Results
+- Include only if explicitly mentioned.
+- Otherwise return: "未明确说明（Not explicitly stated）"
 
-Important experimental findings or evaluation results reported in the paper.
+### Step 3: Evidence Grounding (Critical)
 
-### Limitations
+For every extracted claim:
 
-Known weaknesses, assumptions, or limitations of the proposed method.
+- Provide direct evidence from the paper.
+- Quote or paraphrase with location markers (section, table, figure, or paragraph reference when possible).
 
-### Future Work
+Example:
 
-Possible research directions mentioned by the authors or implied by the work.
+Method:
+The paper proposes a transformer-based architecture for sequence modeling.
 
-## Example Output
+Evidence:
+"We introduce a transformer-based model..." (Method section)
 
-Title:  
-Harnessing the Power of LLMs in Practice: A Survey on ChatGPT and Beyond
+### Step 4: Initial Summary Generation
 
-Research Problem:  
-The paper studies how large language models such as ChatGPT can be applied in real-world scenarios and reviews the current ecosystem of LLM-based applications.
+Generate a structured summary only from extracted elements and grounded evidence.
 
-Methodology:  
-The authors conduct a systematic survey of recent research on large language models, analyzing their architectures, training strategies, and practical applications.
+### Step 5: LLM-as-Judge Evaluation
 
-Key Contributions:  
-1. Overview of the large language model research ecosystem  
-2. Analysis of practical applications of ChatGPT  
-3. Comparison of different LLM architectures and capabilities  
+Score the draft summary:
 
-Experimental Results:  
-The survey reports strong performance of LLMs across various NLP tasks such as question answering, text generation, summarization, and code generation.
+- Accuracy (0-5): factual correctness against source
+- Completeness (0-5): required fields sufficiently covered
+- Coverage (0-5): core problem, method, contribution, results included
+- Hallucination (0-5): unsupported content level (higher means worse)
 
-Limitations:  
-High computational cost, potential hallucination issues, and concerns related to reliability and alignment.
+Compute:
 
-Future Work:  
-Improving model alignment, reducing computational cost, and developing more reliable large language model systems.
+- final_score = accuracy + completeness + coverage + (5 - hallucination)
+- Use scores for internal quality control and refinement only.
+- Do not expose score JSON in user-facing final output.
+
+### Step 6: Self-Refinement Loop
+
+If any condition is true:
+
+- `final_score < 16`
+- `accuracy < 4`
+- `hallucination > 1`
+
+Then:
+
+- Identify weak sections and unsupported claims.
+- Regenerate only weak parts with stronger grounding.
+- Repeat at most 2 iterations.
+
+### Step 7: Evaluation Logging for Iteration
+
+When possible, append a compact test log:
+
+- Paper identifier
+- Scores before and after refinement
+- Main error types fixed (missing result, vague method, unsupported claim)
+- Final pass or fail status
+
+Use this log to identify recurring failure patterns and improve prompts or structure.
+
+## Final Output Structure
+
+Final answer must be in Chinese.
+
+### 标题
+
+### 研究问题
+
+- 证据
+
+### 方法
+
+- 证据
+
+### 关键贡献
+
+- 证据
+
+### 实验结果（包含具体数字）
+
+- 证据
+
+### 局限性
+
+- 证据
+
+## Hard Constraints (Mandatory)
+
+- Do not hallucinate missing information.
+- If uncertain, output exactly: "未明确说明（Not explicitly stated）".
+- Include evidence for every major claim.
+- Include quantitative results when available.
+- Do not generalize beyond paper content.
+- Process exactly one paper per invocation.
+- If multiple papers are provided, stop and ask the user to pick one paper first.
+- Do not output LLM-as-Judge score JSON to users.
+- Use Chinese headings and Chinese narrative in final output.
+
+## Example Command
+
+`summary paper https://arxiv.org/pdf/2304.13712`
+
+## Scripts (Optional)
+
+- Aggregate smoke test outcomes:
+  `python scripts/evaluate_smoke_results.py references/smoke-results --json`
+
+## Intended Use
+
+- Literature review acceleration
+- Research comparison
+- Academic analysis
+- Relevance screening
+
+## Notes
+
+This is a research-oriented skill, not a casual summarization helper.
+Prioritize precision, verifiability, and scientific rigor over style.
